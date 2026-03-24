@@ -38,7 +38,7 @@ All empirical data parsed by this engine is sourced directly from the official N
 >본 엔진에서 분석되는 모든 실증 데이터는 NASA CDDIS 공식 아카이브에서 제공하는 가공되지 않은 생데이터(Raw Data)입니다.
 
 Data Testing (데이터 테스트)
-1. Go to the NASA CDDIS VLBI Archive.
+1. Go to the [NASA CDDIS VLBI Archive](https://cddis.nasa.gov/archive/vlbi/ivsdata/ngs/).
 2. Download any .ngs or .gz files from the 1979-2020 directories.
 3. Drag and drop the downloaded files into the sidebar of the Streamlit app.
 4. Watch as the raw data points perfectly align with the K-PROTOCOL prediction line ($\Delta c$).
