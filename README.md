@@ -32,13 +32,7 @@ The analysis is based on the **K-PROTOCOL**, which defines the following absolut
 3. **Interactive UI & File Uploader**: Users can dynamically upload their own downloaded NASA datasets via the sidebar to instantly test and verify the theory themselves. (한국어/English UI 완벽 지원)
 
 ---
-
-## 🛠️ How to Use (사용 방법)
-
-### 1. Installation (설치)
-```bash
-# Clone the repository
-git clone [https://github.com/your-repo/k-protocol-vlbi.git](https://github.com/your-repo/k-protocol-vlbi.git)
-
-# Install required packages
-pip install -r requirements.txt
+🔗 Data Source (데이터 출처)
+All empirical data parsed by this engine is sourced directly from the official NASA Crustal Dynamics Data Information System (CDDIS).
+본 엔진에서 분석되는 모든 실증 데이터는 NASA CDDIS 공식 아카이브에서 제공하는 가공되지 않은 생데이터(Raw Data)입니다.
+Data Testing (데이터 테스트)Go to the NASA CDDIS VLBI Archive.Download any .ngs or .gz files from the 1979-2020 directories.Drag and drop the downloaded files into the sidebar of the Streamlit app.Watch as the raw data points perfectly align with the K-PROTOCOL prediction line ($\Delta c$).
