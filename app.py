@@ -43,7 +43,7 @@ view_mode = st.radio("👁️ 그래프 레이어 보기 옵션",
                      horizontal=True)
 
 # ==========================================
-# 🔍 무적의 범용 파서 (에러 방어 완벽 적용)
+# 🔍 무적의 범용 파서
 # ==========================================
 def parse_ngs_lines(lines, c_start, c_end):
     data_list = []
@@ -68,16 +68,14 @@ def parse_ngs_lines(lines, c_start, c_end):
                 current_date = None
                 
         elif card_num == '02' and current_date is not None:
-            # 기본적으로 날짜(X축)는 무조건 저장해서 앱이 터지지 않게 보장합니다.
+            # 날짜는 무조건 저장 (시뮬레이션 모드 작동 보장)
             row_data = {'date': current_date}
-            
             try:
-                # 사이드바에서 설정한 위치의 진짜 관측값을 추출 시도합니다.
-                raw_delay = padded_line[c_start:c_end].strip()
+                raw_delay = padded_line[int(c_start):int(c_end)].strip()
                 if raw_delay:
-                    row_data['obs_delay_ns'] = float(raw_delay) / 1000.0  # 단위 변환
+                    row_data['obs_delay_ns'] = float(raw_delay) / 1000.0
             except:
-                pass # 변환에 실패해도 멈추지 않고 날짜만 가져갑니다.
+                pass
             
             data_list.append(row_data)
             current_date = None
@@ -91,7 +89,7 @@ all_data = []
 local_files = [f for f in glob.glob('data/*') if os.path.isfile(f)]
 
 if not local_files:
-    st.error("🚨 `data` 폴더가 비어있습니다. NASA 원시 데이터를 `data` 폴더에 넣어주세요.")
+    st.error("🚨 `data` 폴더가 비어있습니다.")
 else:
     with st.spinner(f"🚀 `data` 폴더의 파일 {len(local_files)}개를 파싱 중입니다..."):
         for filepath in local_files:
@@ -121,9 +119,6 @@ else:
         show_data = "데이터" in view_mode or "전체" in view_mode
         show_pred = "예측선" in view_mode or "전체" in view_mode
 
-        # ---------------------------------------------------------
-        # [모드 1] 시뮬레이션 (저자님의 원본 로직 - 무조건 완벽한 사선)
-        # ---------------------------------------------------------
         if "시뮬레이션" in data_mode:
             df['k_delay_ns'] = (df['years_elapsed'] * DECAY_RATE_YR / C_K) * S_EARTH * 1e9
             
@@ -131,22 +126,33 @@ else:
                 ax.scatter(df['years_elapsed'], df['k_delay_ns'], 
                            alpha=0.5, s=40, color='gray', label="Simulated Nodes (K-PROTOCOL)")
             
-            st.success(f"🎯 [시뮬레이션 모드] 총 **{len(df):,}개**의 데이터 포인트가 K-PROTOCOL 공식에 따라 시각화되었습니다.")
+            st.success(f"🎯 [시뮬레이션 모드] 총 **{len(df):,}개**의 데이터 포인트가 렌더링 되었습니다.")
 
-        # ---------------------------------------------------------
-        # [모드 2] 실증 (진짜 우주 관측 데이터)
-        # ---------------------------------------------------------
         else:
-            # 실제 데이터(obs_delay_ns)가 파싱된 행만 남김
             real_df = df.dropna(subset=['obs_delay_ns']) 
             
             if real_df.empty:
-                st.error("🚨 파일에서 실제 관측 데이터(Delay)를 추출하지 못했습니다. 왼쪽 사이드바에서 'Delay 시작/끝 위치' 숫자를 조절해 보세요.")
+                st.error("🚨 실제 관측 데이터(Delay) 추출 실패. 왼쪽 메뉴에서 Delay 시작/끝 위치를 조절하세요.")
             else:
                 if show_data:
                     ax.scatter(real_df['years_elapsed'], real_df['obs_delay_ns'], 
                                alpha=0.5, s=40, color='blue', label="Real Observation (Raw Delay)")
                 
-                st.success(f"🔥 [실증 모드] 총 **{len(real_df):,}개**의 진짜 우주 관측 데이터가 로드되었습니다! (수식 비적용)")
-                # Y축 스케일 자동 조절
-                ax.autoscale(enable=
+                st.success(f"🔥 [실증 모드] 총 **{len(real_df):,}개**의 진짜 관측 데이터가 로드되었습니다!")
+                
+                # 에러의 원인이었던 부분: 괄호 완벽 차단 및 가장 안전한 방식으로 Y축 자동 조절
+                ax.autoscale(enable=True, axis='both', tight=False)
+
+        if show_pred:
+            x_trend = np.linspace(0, df['years_elapsed'].max(), 100)
+            y_trend = (x_trend * DECAY_RATE_YR / C_K) * S_EARTH * 1e9
+            ax.plot(x_trend, y_trend, color='red', linewidth=3, label="K-PROTOCOL Prediction ($\Delta c$)")
+        
+        ax.set_title(f"VLBI 40-Year Geometric Drift (From {base_date.year})", fontsize=15, fontweight='bold')
+        ax.set_xlabel("Years Elapsed", fontsize=12)
+        ax.set_ylabel("Phase Delay (ns)", fontsize=12)
+        
+        ax.grid(True, linestyle='--', alpha=0.5)
+        ax.legend(loc='upper left', fontsize=11)
+                
+        st.pyplot(fig)
