@@ -8,25 +8,44 @@ import gzip
 from datetime import datetime
 
 # ==========================================
-# 🌌 K-PROTOCOL 절대 상수 및 마스터 포뮬러
+# 🌌 K-PROTOCOL 절대 상수
 # ==========================================
 C_K = 297880197.6          # 절대 광속 (m/s)
 S_EARTH = 1.006419562      # 지구 기하학적 왜곡 계수
 DECAY_RATE_YR = 0.0023     # 연간 광속 감쇠율 (m/s)
 
 st.set_page_config(page_title="K-PROTOCOL VLBI Analyzer", layout="wide")
-st.title("🌌 K-PROTOCOL: VLBI 40-Year Time-Drift Analysis")
-st.write("1979~2020 NASA CDDIS 원시 NGS 데이터를 통해 광속 감쇠($\Delta c$)를 시각화합니다.")
+
+st.title("🌌 K-PROTOCOL: VLBI 40-Year Time-Drift Analyzer")
+st.markdown("NASA CDDIS 원시 데이터 분석 엔진 (시뮬레이션 및 실증 교차 검증)")
 st.markdown("---")
+
+# ==========================================
+# 🎛️ 왼쪽 사이드바 (파싱 위치 실시간 조절기)
+# ==========================================
+with st.sidebar:
+    st.header("⚙️ 데이터 파싱 설정")
+    st.write("실제 관측값이 있는 텍스트 열(Column Index)을 조절하세요. (기본: 20~40)")
+    col_start = st.number_input("Delay 시작 위치", value=20, step=1)
+    col_end = st.number_input("Delay 끝 위치", value=40, step=1)
+    
+    st.markdown("---")
+    data_mode = st.radio(
+        "📊 Y축 데이터 소스 선택", 
+        [
+            "1. [시뮬레이션] K-PROTOCOL 공식 (기존)", 
+            "2. [실증] 진짜 NASA 관측 Delay (오차 증명용)"
+        ]
+    )
 
 view_mode = st.radio("👁️ 그래프 레이어 보기 옵션", 
                      ["전체 보기 (데이터 + 예측선 포개짐)", "관측 시점 데이터만 보기 (회색 점)", "예측선만 보기 (붉은 선)"], 
                      horizontal=True)
 
 # ==========================================
-# 🔍 원래 사용자님의 안전한 파서로 완벽 복구
+# 🔍 무적의 범용 파서 (에러 방어 완벽 적용)
 # ==========================================
-def parse_ngs_lines(lines, filename=""):
+def parse_ngs_lines(lines, c_start, c_end):
     data_list = []
     current_date = None
     for line in lines:
@@ -47,18 +66,26 @@ def parse_ngs_lines(lines, filename=""):
                 current_date = datetime(full_yr, mo, dy, hr, mn, int(sc))
             except:
                 current_date = None
+                
         elif card_num == '02' and current_date is not None:
+            # 기본적으로 날짜(X축)는 무조건 저장해서 앱이 터지지 않게 보장합니다.
+            row_data = {'date': current_date}
+            
             try:
-                # 사용자님의 원본 로직: 날짜 데이터만 안전하게 가져오기
-                if padded_line[0:20].strip():
-                    data_list.append({'date': current_date})
+                # 사이드바에서 설정한 위치의 진짜 관측값을 추출 시도합니다.
+                raw_delay = padded_line[c_start:c_end].strip()
+                if raw_delay:
+                    row_data['obs_delay_ns'] = float(raw_delay) / 1000.0  # 단위 변환
             except:
-                pass
+                pass # 변환에 실패해도 멈추지 않고 날짜만 가져갑니다.
+            
+            data_list.append(row_data)
             current_date = None
+            
     return data_list
 
 # ==========================================
-# 📂 data 폴더 강제 읽기 
+# 📂 data 폴더 강제 읽기
 # ==========================================
 all_data = []
 local_files = [f for f in glob.glob('data/*') if os.path.isfile(f)]
@@ -71,48 +98,55 @@ else:
             try:
                 if filepath.endswith('.gz'):
                     with gzip.open(filepath, 'rt', encoding='utf-8', errors='ignore') as f:
-                        all_data.extend(parse_ngs_lines(f.readlines(), os.path.basename(filepath)))
+                        all_data.extend(parse_ngs_lines(f.readlines(), col_start, col_end))
                 else:
                     with open(filepath, 'r', encoding='utf-8', errors='ignore') as f:
-                        all_data.extend(parse_ngs_lines(f.readlines(), os.path.basename(filepath)))
+                        all_data.extend(parse_ngs_lines(f.readlines(), col_start, col_end))
             except Exception:
                 pass
 
     # ==========================================
-    # 📊 원래의 플롯 로직 복구
+    # 📊 데이터 플롯
     # ==========================================
     if not all_data:
         st.warning("⚠️ 파일은 읽었으나 데이터를 찾지 못했습니다.")
     else:
         df = pd.DataFrame(all_data)
         df = df.sort_values('date')
-        
         base_date = df['date'].min()
         df['years_elapsed'] = (df['date'] - base_date).dt.total_seconds() / (365.25 * 24 * 3600)
         
-        # 사용자님의 원래 공식 (K-PROTOCOL 지연 시간 적용)
-        df['k_delay_ns'] = (df['years_elapsed'] * DECAY_RATE_YR / C_K) * S_EARTH * 1e9
+        fig, ax = plt.subplots(figsize=(12, 6))
         
         show_data = "데이터" in view_mode or "전체" in view_mode
         show_pred = "예측선" in view_mode or "전체" in view_mode
-        
-        fig, ax = plt.subplots(figsize=(12, 6))
-        
-        if show_data:
-            ax.scatter(df['years_elapsed'], df['k_delay_ns'], 
-                       alpha=0.5, s=40, color='gray', label="Observation Nodes (Stacked)")
-        
-        if show_pred:
-            x_trend = np.linspace(0, df['years_elapsed'].max(), 100)
-            y_trend = (x_trend * DECAY_RATE_YR / C_K) * S_EARTH * 1e9
-            ax.plot(x_trend, y_trend, color='red', linewidth=3, label="K-PROTOCOL Prediction ($\Delta c$)")
-        
-        ax.set_title(f"VLBI 40-Year Geometric Drift (From {base_date.year})", fontsize=15, fontweight='bold')
-        ax.set_xlabel("Years Elapsed", fontsize=12)
-        ax.set_ylabel("Geometric Phase Delay (ns)", fontsize=12)
-        
-        ax.grid(True, linestyle='--', alpha=0.5)
-        ax.legend(loc='upper left', fontsize=11)
+
+        # ---------------------------------------------------------
+        # [모드 1] 시뮬레이션 (저자님의 원본 로직 - 무조건 완벽한 사선)
+        # ---------------------------------------------------------
+        if "시뮬레이션" in data_mode:
+            df['k_delay_ns'] = (df['years_elapsed'] * DECAY_RATE_YR / C_K) * S_EARTH * 1e9
+            
+            if show_data:
+                ax.scatter(df['years_elapsed'], df['k_delay_ns'], 
+                           alpha=0.5, s=40, color='gray', label="Simulated Nodes (K-PROTOCOL)")
+            
+            st.success(f"🎯 [시뮬레이션 모드] 총 **{len(df):,}개**의 데이터 포인트가 K-PROTOCOL 공식에 따라 시각화되었습니다.")
+
+        # ---------------------------------------------------------
+        # [모드 2] 실증 (진짜 우주 관측 데이터)
+        # ---------------------------------------------------------
+        else:
+            # 실제 데이터(obs_delay_ns)가 파싱된 행만 남김
+            real_df = df.dropna(subset=['obs_delay_ns']) 
+            
+            if real_df.empty:
+                st.error("🚨 파일에서 실제 관측 데이터(Delay)를 추출하지 못했습니다. 왼쪽 사이드바에서 'Delay 시작/끝 위치' 숫자를 조절해 보세요.")
+            else:
+                if show_data:
+                    ax.scatter(real_df['years_elapsed'], real_df['obs_delay_ns'], 
+                               alpha=0.5, s=40, color='blue', label="Real Observation (Raw Delay)")
                 
-        st.pyplot(fig)
-        st.success(f"🎯 총 **{len(df):,}개**의 초정밀 관측 데이터를 완벽한 사선으로 시각화했습니다.")
+                st.success(f"🔥 [실증 모드] 총 **{len(real_df):,}개**의 진짜 우주 관측 데이터가 로드되었습니다! (수식 비적용)")
+                # Y축 스케일 자동 조절
+                ax.autoscale(enable=
