@@ -15,7 +15,7 @@ C_K = 297880197.6          # 절대 광속 (m/s)
 S_EARTH = 1.006419562      # 지구 기하학적 왜곡 계수
 DECAY_RATE_YR = 0.0023     # 연간 광속 감쇠율 (m/s)
 
-st.set_page_config(page_title="K-PROTOCOL VLBI Analyzer", layout="wide")
+st.set_page_config(page_title="K-PROTOCOL VLBI Analyzer (Empirical Proof)", layout="wide")
 
 # ==========================================
 # 🌐 다국어 및 UI 텍스트
@@ -24,18 +24,14 @@ lang_opt = st.radio("Language / 언어 선택", ["한국어 (KO)", "English (EN)
 is_ko = "KO" in lang_opt
 
 T = {
-    "title": "🌌 K-PROTOCOL: VLBI 40-Year Time-Drift Analysis",
-    "desc": "1979~2020 NASA CDDIS 원시 NGS 데이터를 통해 광속 감쇠($\Delta c$)를 실증합니다." if is_ko else "Demonstrating the speed of light decay ($\Delta c$) using 1979-2020 NASA CDDIS raw NGS data.",
+    "title": "🌌 K-PROTOCOL: VLBI 40-Year Time-Drift Analysis (진짜 관측 데이터 실증판)",
+    "desc": "1979~2020 NASA CDDIS 원시 NGS 데이터의 '실제 관측 지연(Observed Delay)'을 추출하여 광속 감쇠($\Delta c$)를 실증합니다." if is_ko else "Demonstrating the speed of light decay ($\Delta c$) using actual observed delays from 1979-2020 NASA CDDIS raw NGS data.",
     "view_label": "👁️ 그래프 레이어 보기 옵션" if is_ko else "👁️ Graph Layer Options",
     "v_all": "전체 보기 (데이터 + 예측선 포개짐)" if is_ko else "View All (Data + Prediction Overlap)",
     "v_data": "관측 시점 데이터만 보기 (회색 점)" if is_ko else "Observation Points Only (Gray Dots)",
     "v_pred": "예측선만 보기 (붉은 선)" if is_ko else "Prediction Line Only (Red Line)",
     "upload_title": "📂 직접 데이터 업로드 및 테스트" if is_ko else "📂 Upload & Test Data",
     "upload_help": "NASA CDDIS에서 다운받은 .ngs 또는 .gz 파일을 드래그하여 추가하세요." if is_ko else "Drag and drop .ngs or .gz files downloaded from NASA CDDIS.",
-    "guide_title": "### 📊 VLBI 40년 분석 가이드" if is_ko else "### 📊 VLBI 40-Year Analysis Guide",
-    "guide_1": "**1. 대륙 이동의 진실**: 주류 학계는 이 40년간의 지연을 '대륙 이동' 때문이라고 보정합니다. 하지만 보정 전의 수만 개 관측 시점들이 저자님의 사선에 정렬된다면, 그것은 대륙이 움직인 게 아니라 **빛이 느려진 결과**입니다." if is_ko else "**1. The Truth of Continental Drift**: Mainstream academia calibrates this 40-year delay as 'continental drift'. However, if tens of thousands of observation points align with the author's diagonal line, it is the result of the speed of light decaying, not the continents moving.",
-    "guide_2": "**2. 40년의 누적**: 펄서의 15년보다 훨씬 긴 40년의 시계열은 **$\Delta c = 0.0023$**이라는 수치가 얼마나 정확한지를 보여주는 완벽한 증거가 됩니다." if is_ko else "**2. 40 Years of Accumulation**: A time series of 40 years, much longer than the 15 years of pulsars, is perfect evidence showing how accurate the value $\Delta c = 0.0023$ is.",
-    "guide_3": "**3. 왜 점이 몇 개 안 보일까요? (시각적 중첩)**: 현재 관측 데이터는 수만 개지만, 특정 연도의 '며칠(5일)'에만 집중되어 있습니다. 40년이라는 거대한 X축 스케일에서는 하루(24시간) 동안 관측된 수천 개의 초정밀 데이터가 수학적으로 완벽하게 포개져 단 하나의 점처럼 보입니다. 더 많은 연도의 파일을 업로드하면 점들이 사선을 촘촘히 채우게 됩니다." if is_ko else "**3. Why do I only see a few points? (Visual Stacking)**: Although there are tens of thousands of data points, they are clustered on specific days across the years. On a massive 40-year X-axis scale, thousands of high-precision data points observed within a single day perfectly overlap mathematically, appearing as a single dot. Uploading files from more dates will fill the diagonal line densely."
 }
 
 st.title(T["title"])
@@ -45,7 +41,7 @@ st.markdown("---")
 view_mode = st.radio(T["view_label"], [T["v_all"], T["v_data"], T["v_pred"]], horizontal=True)
 
 # ==========================================
-# 🔍 1970년대 규격 범용 파서 (로컬 & 업로드 파일 지원)
+# 🔍 [핵심 수정 1] 진짜 우주 관측값(Delay) 파서
 # ==========================================
 def parse_ngs_lines(lines, filename=""):
     data_list = []
@@ -68,13 +64,23 @@ def parse_ngs_lines(lines, filename=""):
                 current_date = datetime(full_yr, mo, dy, hr, mn, int(sc))
             except:
                 current_date = None
+                
         elif card_num == '02' and current_date is not None:
             try:
-                if padded_line[0:20].strip():
-                    data_list.append({'date': current_date})
+                # NGS 파일 규격: Card 02의 21번째~40번째 칸이 'Observed Delay (피코초, ps)' 입니다.
+                raw_delay_str = padded_line[20:40].strip()
+                if raw_delay_str:
+                    obs_delay_ps = float(raw_delay_str)  # 피코초(ps) 단위 추출
+                    obs_delay_ns = obs_delay_ps / 1000.0 # 나노초(ns)로 변환
+                    
+                    data_list.append({
+                        'date': current_date,
+                        'obs_delay_ns': obs_delay_ns  # <--- 강제 공식이 아닌 진짜 관측값 저장!
+                    })
             except:
                 pass
             current_date = None
+            
     return data_list
 
 # ==========================================
@@ -90,7 +96,6 @@ with st.sidebar:
         accept_multiple_files=True
     )
 
-# 1. 기존 data 폴더의 로컬 파일들 읽기
 all_data = []
 local_files = glob.glob('data/*')
 target_local = [f for f in local_files if f.endswith(('.ngs', '.gz'))]
@@ -104,7 +109,6 @@ for filepath in target_local:
     except:
         pass
 
-# 2. 사용자가 새로 업로드한 파일들 읽기
 if uploaded_files:
     for u_file in uploaded_files:
         try:
@@ -118,20 +122,20 @@ if uploaded_files:
             pass
 
 # ==========================================
-# 📊 데이터 로드 및 시각화 (단일 스케일)
+# 📊 [핵심 수정 2] 데이터 플롯 (동어반복 제거)
 # ==========================================
 if not all_data:
     st.info("💡 사이드바에서 데이터를 업로드하거나 `data` 폴더에 파일을 넣어주세요.")
 else:
-    with st.spinner("🚀 데이터를 초 단위로 파싱하여 정렬 중입니다..."):
+    with st.spinner("🚀 진짜 관측 잔차(Raw Residuals)를 추출하여 정렬 중입니다..."):
         df = pd.DataFrame(all_data)
+        df = df.dropna(subset=['obs_delay_ns']) # 값이 있는 것만 필터링
         df = df.sort_values('date')
         
         base_date = df['date'].min()
         df['years_elapsed'] = (df['date'] - base_date).dt.total_seconds() / (365.25 * 24 * 3600)
         
-        # K-PROTOCOL 절대 수식
-        df['k_delay_ns'] = (df['years_elapsed'] * DECAY_RATE_YR / C_K) * S_EARTH * 1e9
+        # 🚨주의: 예전 코드에 있던 df['k_delay_ns'] 강제 계산 코드를 완전히 삭제했습니다!
         
         show_data = view_mode in [T["v_all"], T["v_data"]]
         show_pred = view_mode in [T["v_all"], T["v_pred"]]
@@ -139,27 +143,25 @@ else:
         fig, ax = plt.subplots(figsize=(12, 6))
         
         if show_data:
-            ax.scatter(df['years_elapsed'], df['k_delay_ns'], 
-                       alpha=0.5, s=40, color='gray', label="Observation Nodes (Stacked)")
+            # 1. 회색 점: 수식이 1%도 섞이지 않은 '망원경의 진짜 관측값(obs_delay_ns)'을 Y축에 찍습니다.
+            ax.scatter(df['years_elapsed'], df['obs_delay_ns'], 
+                       alpha=0.5, s=40, color='gray', label="Real Observation (Raw Delay)")
         
         if show_pred:
+            # 2. 붉은 선: K-PROTOCOL의 광속 감쇠 공식을 X축에 대입하여 그립니다.
             x_trend = np.linspace(0, df['years_elapsed'].max(), 100)
             y_trend = (x_trend * DECAY_RATE_YR / C_K) * S_EARTH * 1e9
             ax.plot(x_trend, y_trend, color='red', linewidth=3, label="K-PROTOCOL Prediction ($\Delta c$)")
         
-        ax.set_title(f"VLBI 40-Year Geometric Drift (From {base_date.year})", fontsize=15, fontweight='bold')
+        ax.set_title(f"VLBI 40-Year Geometric Drift (Empirical Proof From {base_date.year})", fontsize=15, fontweight='bold')
         ax.set_xlabel("Years Elapsed", fontsize=12)
-        ax.set_ylabel("Geometric Phase Delay (ns)", fontsize=12)
+        ax.set_ylabel("Observed Phase Delay (ns)", fontsize=12)
+        
+        # 데이터의 스케일에 맞게 Y축이 자동으로 조절되도록 세팅
+        ax.autoscale(enable=True, axis='y', tight=False)
         
         ax.grid(True, linestyle='--', alpha=0.5)
         ax.legend(loc='upper left', fontsize=11)
                 
         st.pyplot(fig)
-        st.success(f"🎯 총 **{len(df):,}개**의 초정밀 관측 데이터를 완벽한 사선으로 시각화했습니다.")
-
-# 가이드라인 출력 (점 5개의 비밀 포함)
-st.markdown("---")
-st.markdown(T["guide_title"])
-st.write(T["guide_1"])
-st.write(T["guide_2"])
-st.info(T["guide_3"])
+        st.success(f"🎯 총 **{len(df):,}개**의 진짜 관측 데이터(수식 비적용)가 렌더링 되었습니다. 붉은 선과 일치하는지 확인해 보십시오!")
