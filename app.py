@@ -5,45 +5,29 @@ import matplotlib.pyplot as plt
 import glob
 import os
 import gzip
-import io
 from datetime import datetime
 
 # ==========================================
-# 🌌 K-PROTOCOL 절대 상수 및 마스터 포뮬러
+# 🌌 K-PROTOCOL 절대 상수
 # ==========================================
 C_K = 297880197.6          # 절대 광속 (m/s)
 S_EARTH = 1.006419562      # 지구 기하학적 왜곡 계수
 DECAY_RATE_YR = 0.0023     # 연간 광속 감쇠율 (m/s)
 
-st.set_page_config(page_title="K-PROTOCOL VLBI Analyzer (Empirical Proof)", layout="wide")
+st.set_page_config(page_title="K-PROTOCOL VLBI Empirical Proof", layout="wide")
 
-# ==========================================
-# 🌐 다국어 및 UI 텍스트
-# ==========================================
-lang_opt = st.radio("Language / 언어 선택", ["한국어 (KO)", "English (EN)"], horizontal=True)
-is_ko = "KO" in lang_opt
-
-T = {
-    "title": "🌌 K-PROTOCOL: VLBI 40-Year Time-Drift Analysis (진짜 관측 데이터 실증판)",
-    "desc": "1979~2020 NASA CDDIS 원시 NGS 데이터의 '실제 관측 지연(Observed Delay)'을 추출하여 광속 감쇠($\Delta c$)를 실증합니다." if is_ko else "Demonstrating the speed of light decay ($\Delta c$) using actual observed delays from 1979-2020 NASA CDDIS raw NGS data.",
-    "view_label": "👁️ 그래프 레이어 보기 옵션" if is_ko else "👁️ Graph Layer Options",
-    "v_all": "전체 보기 (데이터 + 예측선 포개짐)" if is_ko else "View All (Data + Prediction Overlap)",
-    "v_data": "관측 시점 데이터만 보기 (회색 점)" if is_ko else "Observation Points Only (Gray Dots)",
-    "v_pred": "예측선만 보기 (붉은 선)" if is_ko else "Prediction Line Only (Red Line)",
-    "upload_title": "📂 직접 데이터 업로드 및 테스트" if is_ko else "📂 Upload & Test Data",
-    "upload_help": "NASA CDDIS에서 다운받은 .ngs 또는 .gz 파일을 드래그하여 추가하세요." if is_ko else "Drag and drop .ngs or .gz files downloaded from NASA CDDIS.",
-}
-
-st.title(T["title"])
-st.write(T["desc"])
+st.title("🌌 K-PROTOCOL: VLBI 40-Year Time-Drift (진짜 관측 데이터 실증판)")
+st.markdown("NASA CDDIS 원시 데이터의 **'실제 관측 지연(Observed Delay)'**을 추출하여 광속 감쇠($\Delta c$)를 실증합니다. (수식 조작 없음)")
 st.markdown("---")
 
-view_mode = st.radio(T["view_label"], [T["v_all"], T["v_data"], T["v_pred"]], horizontal=True)
+view_mode = st.radio("👁️ 그래프 레이어 보기 옵션", 
+                     ["전체 보기 (데이터 + 예측선 포개짐)", "관측 시점 데이터만 보기 (회색 점)", "예측선만 보기 (붉은 선)"], 
+                     horizontal=True)
 
 # ==========================================
-# 🔍 [핵심 수정 1] 진짜 우주 관측값(Delay) 파서
+# 🔍 진짜 우주 관측값(Delay) 파서
 # ==========================================
-def parse_ngs_lines(lines, filename=""):
+def parse_ngs_lines(lines):
     data_list = []
     current_date = None
     for line in lines:
@@ -67,7 +51,7 @@ def parse_ngs_lines(lines, filename=""):
                 
         elif card_num == '02' and current_date is not None:
             try:
-                # NGS 파일 규격: Card 02의 21번째~40번째 칸이 'Observed Delay (피코초, ps)' 입니다.
+                # NGS 파일 규격: Card 02의 21~40번째 칸이 실제 'Observed Delay (ps)' 입니다.
                 raw_delay_str = padded_line[20:40].strip()
                 if raw_delay_str:
                     obs_delay_ps = float(raw_delay_str)  # 피코초(ps) 단위 추출
@@ -84,50 +68,33 @@ def parse_ngs_lines(lines, filename=""):
     return data_list
 
 # ==========================================
-# 📂 왼쪽 사이드바: 데이터 다운로드 링크 & 업로더
+# 📂 data 폴더 강제 읽기 (확장자 무시, 업로드 버튼 삭제)
 # ==========================================
-with st.sidebar:
-    st.header(T["upload_title"])
-    st.markdown("[🔗 NASA CDDIS VLBI Archive (Download)](https://cddis.nasa.gov/archive/vlbi/ivsdata/ngs/)")
-    
-    uploaded_files = st.file_uploader(
-        T["upload_help"], 
-        type=["ngs", "gz"], 
-        accept_multiple_files=True
-    )
-
 all_data = []
-local_files = glob.glob('data/*')
-target_local = [f for f in local_files if f.endswith(('.ngs', '.gz'))]
+# data 폴더 안의 모든 파일을 무조건 읽어옵니다.
+local_files = [f for f in glob.glob('data/*') if os.path.isfile(f)]
 
-for filepath in target_local:
-    open_func = gzip.open if filepath.endswith('.gz') else open
-    mode = 'rt' if filepath.endswith('.gz') else 'r'
-    try:
-        with open_func(filepath, mode) as f:
-            all_data.extend(parse_ngs_lines(f.readlines(), os.path.basename(filepath)))
-    except:
-        pass
-
-if uploaded_files:
-    for u_file in uploaded_files:
-        try:
-            if u_file.name.endswith('.gz'):
-                with gzip.open(u_file, 'rt') as f:
-                    all_data.extend(parse_ngs_lines(f.readlines(), u_file.name))
-            else:
-                stringio = io.StringIO(u_file.getvalue().decode('utf-8', errors='ignore'))
-                all_data.extend(parse_ngs_lines(stringio.readlines(), u_file.name))
-        except:
-            pass
-
-# ==========================================
-# 📊 [핵심 수정 2] 데이터 플롯 (동어반복 제거)
-# ==========================================
-if not all_data:
-    st.info("💡 사이드바에서 데이터를 업로드하거나 `data` 폴더에 파일을 넣어주세요.")
+if not local_files:
+    st.error("🚨 `data` 폴더가 비어있습니다. NASA 원시 데이터를 `data` 폴더에 넣어주세요.")
 else:
-    with st.spinner("🚀 진짜 관측 잔차(Raw Residuals)를 추출하여 정렬 중입니다..."):
+    with st.spinner(f"🚀 `data` 폴더의 파일 {len(local_files)}개에서 진짜 관측 잔차(Raw Residuals)를 추출 중입니다..."):
+        for filepath in local_files:
+            try:
+                if filepath.endswith('.gz'):
+                    with gzip.open(filepath, 'rt', encoding='utf-8', errors='ignore') as f:
+                        all_data.extend(parse_ngs_lines(f.readlines()))
+                else:
+                    with open(filepath, 'r', encoding='utf-8', errors='ignore') as f:
+                        all_data.extend(parse_ngs_lines(f.readlines()))
+            except Exception:
+                pass
+                
+    # ==========================================
+    # 📊 데이터 플롯 (동어반복 완벽 제거)
+    # ==========================================
+    if not all_data:
+        st.warning("⚠️ 파일은 읽었으나, NASA NGS 규격(Card 01/02)에 맞는 데이터를 찾지 못했습니다.")
+    else:
         df = pd.DataFrame(all_data)
         df = df.dropna(subset=['obs_delay_ns']) # 값이 있는 것만 필터링
         df = df.sort_values('date')
@@ -135,10 +102,8 @@ else:
         base_date = df['date'].min()
         df['years_elapsed'] = (df['date'] - base_date).dt.total_seconds() / (365.25 * 24 * 3600)
         
-        # 🚨주의: 예전 코드에 있던 df['k_delay_ns'] 강제 계산 코드를 완전히 삭제했습니다!
-        
-        show_data = view_mode in [T["v_all"], T["v_data"]]
-        show_pred = view_mode in [T["v_all"], T["v_pred"]]
+        show_data = "데이터" in view_mode or "전체" in view_mode
+        show_pred = "예측선" in view_mode or "전체" in view_mode
         
         fig, ax = plt.subplots(figsize=(12, 6))
         
@@ -164,4 +129,4 @@ else:
         ax.legend(loc='upper left', fontsize=11)
                 
         st.pyplot(fig)
-        st.success(f"🎯 총 **{len(df):,}개**의 진짜 관측 데이터(수식 비적용)가 렌더링 되었습니다. 붉은 선과 일치하는지 확인해 보십시오!")
+        st.success(f"🎯 총 **{len(df):,}개**의 진짜 관측 데이터(수식 비적용)가 렌더링 되었습니다. 우주의 파편들이 붉은 선을 따라 정렬하는지 확인하십시오!")
