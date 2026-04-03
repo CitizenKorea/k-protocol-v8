@@ -3,7 +3,7 @@ import requests
 from bs4 import BeautifulSoup
 import re
 
-# GitHub Secrets에서 정보를 안전하게 가져옵니다.
+# GitHub Secrets에서 정보를 가져옵니다.
 USERNAME = os.getenv('NASA_USER')
 PASSWORD = os.getenv('NASA_PASS')
 YEARS = ['1980', '1990', '2000', '2010', '2020']
@@ -12,7 +12,6 @@ SAVE_DIR = 'data'
 if not os.path.exists(SAVE_DIR):
     os.makedirs(SAVE_DIR)
 
-# NASA 보안 리다이렉트 대응용 클래스
 class NASAAuth(requests.auth.AuthBase):
     def __init__(self, user, pw):
         self.user = user
@@ -26,41 +25,47 @@ def download_data():
     auth = NASAAuth(USERNAME, PASSWORD)
 
     for year in YEARS:
-        print(f"🚀 {year}년 데이터 탐색 시작...")
+        print(f"🚀 {year}년 데이터 정밀 스캔 시작...")
         url = f"https://cddis.nasa.gov/archive/vlbi/ivsdata/ngs/{year}/"
         
         try:
             resp = session.get(url, auth=auth)
             if resp.status_code != 200:
-                print(f"❌ {year}년 접속 실패 (코드: {resp.status_code})")
+                print(f"❌ {year}년 접속 실패: {resp.status_code}")
                 continue
 
             soup = BeautifulSoup(resp.text, 'html.parser')
-            # R1, R4 세션 또는 용량이 큰 X 세션 위주로 필터링
-            links = [a['href'] for a in soup.find_all('a', href=True) 
-                     if a['href'].endswith('.gz') and any(x in a['href'].upper() for x in ['R1', 'R4', 'X'])]
+            # 1. 모든 .gz 파일 링크를 가져옵니다.
+            all_links = [a['href'] for a in soup.find_all('a', href=True) if a['href'].endswith('.gz')]
+            
+            # 2. R1, R4, X, S 세션 중 하나라도 포함된 것 필터링 (80년대 S 세션 추가)
+            valid_links = [l for l in all_links if any(x in l.upper() for x in ['R1', 'R4', 'X', 'S'])]
             
             best_files = {}
-            for link in links:
-                base = link.split('__N')[0]
-                try:
-                    ver_part = link.split('__N')[1].split('.')[0]
-                    ver = int(re.sub(r'[^0-9]', '', ver_part))
+            for link in valid_links:
+                # 💡 핵심 수정: _N 또는 __N 뒤의 숫자를 유연하게 추출
+                match = re.search(r'(_+N)(\d+)', link)
+                if match:
+                    base = link.split(match.group(1))[0] # N 앞부분 (세션명)
+                    ver = int(match.group(2))           # N 뒷부분 (버전숫자)
+                    
                     if base not in best_files or ver > best_files[base]['ver']:
                         best_files[base] = {'ver': ver, 'link': link}
-                except: continue
 
-            for base in list(best_files.keys())[:7]: 
+            # 3. 각 연도별로 상위 10개씩 다운로드
+            count = 0
+            for base in list(best_files.keys())[:10]:
                 fname = best_files[base]['link']
                 save_path = os.path.join(SAVE_DIR, fname)
-                if os.path.exists(save_path): continue
                 
-                print(f"📥 다운로드: {fname}")
+                print(f"📥 발견: {fname} (버전 {best_files[base]['ver']})")
                 file_resp = session.get(url + fname, auth=auth)
                 if file_resp.status_code == 200:
                     with open(save_path, 'wb') as f:
                         f.write(file_resp.content)
-            print(f"✅ {year}년 완료")
+                    count += 1
+            print(f"✅ {year}년 완료: {count}개 수집됨")
+            
         except Exception as e:
             print(f"❌ {year}년 에러: {e}")
 
