@@ -1,34 +1,54 @@
-name: NASA Data Downloader
+name: NASA Data Downloader (cURL Master)
 
 on:
-  workflow_dispatch: # 버튼을 눌러 수동으로 실행
+  workflow_dispatch:
 
 jobs:
   download:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4 # 💡 노란색 경고창을 없애는 최신 버전입니다.
 
-      - name: Set up Python
-        uses: actions/setup-python@v4
-        with:
-          python-version: '3.9'
-
-      - name: Install dependencies
+      - name: Setup NASA VIP Pass (.netrc)
         run: |
-          pip install requests beautifulsoup4
+          echo "machine urs.earthdata.nasa.gov login ${{ secrets.NASA_USER }} password ${{ secrets.NASA_PASS }}" > ~/.netrc
+          chmod 0600 ~/.netrc
+          touch ~/.urs_cookies
 
-      - name: Run downloader
-        env:
-          NASA_USER: ${{ secrets.NASA_USER }}
-          NASA_PASS: ${{ secrets.NASA_PASS }}
-        run: python downloader.py # 다운로더 파일명이 downloader.py라고 가정
+      - name: Download NASA Data Directly
+        run: |
+          mkdir -p data
+          cd data
+          
+          # 1980년부터 2020년까지 연도별로 싹 뒤집니다.
+          YEARS=("1980" "1990" "2000" "2010" "2020")
+          
+          for YEAR in "${YEARS[@]}"; do
+            echo "🚀 $YEAR년 데이터 스캔 및 cURL 다운로드 시작..."
+            URL="https://cddis.nasa.gov/archive/vlbi/ivsdata/ngs/$YEAR/"
+            
+            # 1. 파일 목록에서 R1, R4, X, S가 포함된 알짜배기 파일명만 10개 추출
+            curl -s -n -c ~/.urs_cookies -b ~/.urs_cookies -L $URL | grep -o 'href="[^"]*\.gz"' | cut -d'"' -f2 | grep -iE 'R1|R4|X|S' | head -n 10 > file_list.txt
+            
+            # 2. 추출한 파일들을 NASA 공식 권장 방식으로 무력 다운로드
+            while read file; do
+              if [ -n "$file" ]; then
+                echo "📥 수집 중: $file"
+                curl -O -n -c ~/.urs_cookies -b ~/.urs_cookies -L "$URL$file"
+              fi
+            done < file_list.txt
+            
+            rm -f file_list.txt
+          done
+          
+          echo "✅ 다운로드 완료된 파일 목록 (용량 확인):"
+          ls -lh
 
       - name: Commit and Push data
         run: |
           git config --global user.name "GitHub Action"
           git config --global user.email "action@github.com"
           git add data/*.gz
-          git commit -m "Add new NASA data" || exit 0
+          git commit -m "Force download NASA data via cURL" || exit 0
           git push
