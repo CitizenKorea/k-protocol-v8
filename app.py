@@ -43,7 +43,7 @@ view_mode = st.radio("👁️ 그래프 레이어 보기 옵션",
                      horizontal=True)
 
 # ==========================================
-# 🔍 무적의 범용 파서
+# 🔍 무적의 범용 파서 (에러 원천 차단)
 # ==========================================
 def parse_ngs_lines(lines, c_start, c_end):
     data_list = []
@@ -68,14 +68,15 @@ def parse_ngs_lines(lines, c_start, c_end):
                 current_date = None
                 
         elif card_num == '02' and current_date is not None:
-            # 날짜는 무조건 저장 (시뮬레이션 모드 작동 보장)
-            row_data = {'date': current_date}
+            # 🚨 [수정 포인트] 칼럼이 무조건 존재하도록 기본값(NaN)을 강제 부여합니다.
+            row_data = {'date': current_date, 'obs_delay_ns': np.nan}
+            
             try:
                 raw_delay = padded_line[int(c_start):int(c_end)].strip()
                 if raw_delay:
                     row_data['obs_delay_ns'] = float(raw_delay) / 1000.0
             except:
-                pass
+                pass # 숫자로 못 바꿔도 에러 안 내고 쿨하게 넘어갑니다.
             
             data_list.append(row_data)
             current_date = None
@@ -114,6 +115,10 @@ else:
         base_date = df['date'].min()
         df['years_elapsed'] = (df['date'] - base_date).dt.total_seconds() / (365.25 * 24 * 3600)
         
+        # 🚨 [안전장치 2] 만약 파일 형식이 아예 달라서 칼럼 생성이 안 되었을 경우 대비
+        if 'obs_delay_ns' not in df.columns:
+            df['obs_delay_ns'] = np.nan
+            
         fig, ax = plt.subplots(figsize=(12, 6))
         
         show_data = "데이터" in view_mode or "전체" in view_mode
@@ -132,15 +137,13 @@ else:
             real_df = df.dropna(subset=['obs_delay_ns']) 
             
             if real_df.empty:
-                st.error("🚨 실제 관측 데이터(Delay) 추출 실패. 왼쪽 메뉴에서 Delay 시작/끝 위치를 조절하세요.")
+                st.error("🚨 현재 설정된 위치(Index)에서 숫자를 찾지 못했습니다. 왼쪽 사이드바에서 [Delay 시작/끝 위치]를 조절해 진짜 관측값이 있는 칸을 찾아주세요!")
             else:
                 if show_data:
                     ax.scatter(real_df['years_elapsed'], real_df['obs_delay_ns'], 
                                alpha=0.5, s=40, color='blue', label="Real Observation (Raw Delay)")
                 
                 st.success(f"🔥 [실증 모드] 총 **{len(real_df):,}개**의 진짜 관측 데이터가 로드되었습니다!")
-                
-                # 에러의 원인이었던 부분: 괄호 완벽 차단 및 가장 안전한 방식으로 Y축 자동 조절
                 ax.autoscale(enable=True, axis='both', tight=False)
 
         if show_pred:
